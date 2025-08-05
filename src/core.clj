@@ -36,8 +36,23 @@
    :best-paths {}
    :adj-rib-out {}})
 
+(defn add-peer 
+  "Adds a peering entry for a given asn to the peer-asn"
+  [asn peer-asn]
+  (update asn :peers #(vec (distinct (conj % peer-asn)))))
 
-(def test (init-asn {:asn 1234
-                     :name "test"
-                     :peers [1 2 3]}))
-test
+(defn add-rib-out
+  "Adds/updates a route in :adj-rib-out for a peer and prefix pair"
+  [asn peer prefix route]
+  (assoc-in asn [:adj-rib-out peer prefix] route))
+
+(def test-asn
+  (-> (init-asn {:asn 4333 :name "test-sw"})
+      (add-peer 8888)
+      (add-rib-out 8888 "192.168.0.0/24"
+                   {:as-path [4333 4444 3333 2222]
+                    :local-pref 120
+                    :oring :incomplete})))
+
+
+
