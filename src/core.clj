@@ -1,58 +1,67 @@
 (ns theseus.core)
 
-(def test-asn
-  {:asn 64501
-   :name "core-sw1"
-   :peers [64500 65402]
-   :routes-in
-   {"10.0.0.0/24"
-    [{:peer 64500
-      :as-path [64500 64499]
-      :local-pref 100
-      :med 0
-      :communities #{"no-export"}
-      :origin :igp}]}
-
-   :policies
-   {:inbound
-    {64500 {:set-local-pref 100
-            :deny-communities #{"blackhole"}}}
-    :outbound
-    {64502 {:allow true}}}
-
-   :best-paths {}
-   :adj-rib-out {}})
-
-(defn init-asn
-  [{:keys [asn name peers policies routes-in]
-    :or {peers []
-         policies {:inbound {} :outbound {}}
-         routes-in {}}}]
-  {:asn asn
-   :name name
-   :peers peers
-   :policies policies
-   :routes-in routes-in
-   :best-paths {}
-   :adj-rib-out {}})
-
-(defn add-peer 
-  "Adds a peering entry for a given asn to the peer-asn"
-  [asn peer-asn]
-  (update asn :peers #(vec (distinct (conj % peer-asn)))))
-
-(defn add-rib-out
-  "Adds/updates a route in :adj-rib-out for a peer and prefix pair"
-  [asn peer prefix route]
-  (assoc-in asn [:adj-rib-out peer prefix] route))
-
-(def test-asn
-  (-> (init-asn {:asn 4333 :name "test-sw"})
-      (add-peer 8888)
-      (add-rib-out 8888 "192.168.0.0/24"
-                   {:as-path [4333 4444 3333 2222]
-                    :local-pref 120
-                    :oring :incomplete})))
+(def r1 
+  {:router-id "1.1.1.1"
+   :hostname  "R1"
+   :asn       65001
 
 
+   :vrfs
+   {"default"
+    {:interfaces
+     {"Ethernet1" {:ipv4 ["10.0.12.1/30"] :ipv6 [] :state :up}
+      "Ethernet2" {:ipv4 ["10.0.13.1/30"] :ipv6 [] :state :up}
+      "Loopback0" {:ipv4 ["1.1.1.1/32"]   :ipv6 [] :state :up}}
 
+
+     :neighbors
+     {
+      "Ethernet1" {:type :p2p :peer "R2" :remote-if "Ethernet1"}
+      "Ethernet2" {:type :p2p :peer "R3" :remote-if "Ethernet2"}}
+     
+
+     :arp {"10.0.12.2" "00:11:22:33:44:55"
+           "10.0.13.2" "00:aa:bb:cc:dd:ee"}
+
+
+     :ribs
+     {:connected {"10.0.12.0/30" {:nh :connected :if "Ethernet1"}
+                  "10.0.13.0/30" {:nh :connected :if "Ethernet2"}
+                  "1.1.1.1/32"   {:nh :connected :if "Loopback0"}}
+
+      :static    {} 
+
+      :igp       {:protocol :isis
+                  :routes {"1.1.1.2/32" {:nh "10.0.12.2" :if "Ethernet1" :metric 10}}}
+      
+      :bgp       {
+                  "192.0.2.0/24" {:attrs {:local-pref 200 :as-path [65002]}
+                                  :nh "10.0.12.2" :if "Ethernet1"
+                                  :src-peer 65002
+                                  :origin :igp :med 0}}}
+
+     :bgp
+     {:neighbors
+      {65002 {:remote-as 65002 :session-type :ebgp
+              :router-id "2.2.2.2"
+              :import-policy {:set-local-pref 200}
+              :export-policy {:set-communities-additive ["65001:99"]}
+              :adj-rib-in  {"192.0.2.0/24" [{:attrs {:local-pref 100
+                                                     :as-path [65002 64512]
+                                                     :origin :igp
+                                                     :communities ["64512:100"]}
+                                             :nh "10.0.12.2" :if "Ethernet1"}]}
+              :adj-rib-out {}}}}
+     
+     :fib
+     {"192.0.2.0/24" [{:nh "10.0.12.2" :if "Ethernet1" :weight 1
+                       :mac "00:11:22:33:44:55"}]
+      "0.0.0.0/0"    [{:nh "10.0.12.2" :if "Ethernet1" :weight 1}]}}}})
+
+(defn add-interface 
+"Configure interface on a router"
+[router vrf ifname ip-cidr]
+(assoc-in router [:vrfs vrf :interfaces ifname :ipv4]
+          (conj (get-in router [:vrfs vrf :interfaces ifname :ipv4] []) ip-cidr)))
+
+(add-interface r1 "default" "Ethernet3" "172.20.4.1/30")
